@@ -1,0 +1,56 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [ "main" ]
+
+env:
+  APP_NAME: task22
+  APP_PORT: 8083
+
+jobs:
+  build:
+    runs-on: self-hosted
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Build Docker image
+        run: docker build -t $APP_NAME:latest .
+
+  deploy:
+    runs-on: self-hosted
+    needs: build
+    steps:
+      - name: Stop and remove old container if exists
+        run: |
+          echo "Checking if old container exists..."
+          if docker ps -a --filter "name=${APP_NAME}-container" -q | grep -q .; then
+            echo "Old container found. Removing..."
+            docker rm -f ${APP_NAME}-container
+          else
+            echo "No existing container found."
+          fi
+
+      - name: Run new container
+        run: |
+          echo "Starting new container..."
+          docker run -d -p $APP_PORT:80 --name ${APP_NAME}-container $APP_NAME:latest
+
+  test:
+    runs-on: self-hosted
+    needs: deploy
+    steps:
+      - name: Wait for container to start
+        run: sleep 5
+
+      - name: Test container response
+        run: |
+          if curl -s http://localhost:$APP_PORT | grep -q "<html"; then
+            echo " Test passed: Container is serving content on port $APP_PORT."
+          else
+            echo " Test failed: Container did not respond correctly."
+            echo "===== Container Logs ====="
+            docker logs ${APP_NAME}-container || true
+            exit 1
+          fi
